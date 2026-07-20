@@ -226,7 +226,7 @@ where
         B: FnMut(&egui::Context, &mut Queue, &mut State),
         B: 'static + Send,
     {
-        #[cfg(feature = "opengl")]
+        #[cfg(all(feature = "opengl", not(feature = "wgpu")))]
         if settings.gl_config.is_none() {
             settings.gl_config = Some(Default::default());
         }
@@ -260,7 +260,7 @@ where
         B: FnMut(&egui::Context, &mut Queue, &mut State),
         B: 'static + Send,
     {
-        #[cfg(feature = "opengl")]
+        #[cfg(all(feature = "opengl", not(feature = "wgpu")))]
         if settings.gl_config.is_none() {
             settings.gl_config = Some(Default::default());
         }
@@ -347,7 +347,7 @@ where
 
         if do_repaint_now {
             self.renderer.render(
-                #[cfg(feature = "opengl")]
+                #[cfg(all(feature = "opengl", not(feature = "wgpu")))]
                 window,
                 self.bg_color,
                 self.physical_size,
