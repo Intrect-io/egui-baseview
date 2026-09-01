@@ -58,6 +58,20 @@ pub struct Renderer {
     height: u32,
 }
 
+fn win32_raw_window_handle_06(
+    handle: raw_window_handle::Win32WindowHandle,
+) -> raw_window_handle_06::RawWindowHandle {
+    let mut raw_handle = Win32WindowHandle::new(NonZeroIsize::new(handle.hwnd as isize).unwrap());
+
+    // `baseview` only exposes an HWND for parented Windows plug-in editors.
+    // A null HINSTANCE is valid for wgpu's raw-window-handle 0.6
+    // representation; attempting to turn it into `NonZeroIsize` panics
+    // before the renderer can create its surface.
+    raw_handle.hinstance = NonZeroIsize::new(handle.hinstance as isize);
+
+    raw_window_handle_06::RawWindowHandle::Win32(raw_handle)
+}
+
 impl Renderer {
     pub fn new(window: &Window, config: GraphicsConfig) -> Result<Self, WgpuError> {
         let instance = Instance::new(&InstanceDescriptor::default());
@@ -104,16 +118,7 @@ impl Renderer {
                     ))
                 }
                 raw_window_handle::RawWindowHandle::Win32(handle) => {
-                    // will this work? i have no idea!
-                    let mut raw_handle =
-                        Win32WindowHandle::new(NonZeroIsize::new(handle.hwnd as isize).unwrap());
-
-                    raw_handle.hinstance = handle
-                        .hinstance
-                        .is_null()
-                        .then(|| NonZeroIsize::new(handle.hinstance as isize).unwrap());
-
-                    raw_window_handle_06::RawWindowHandle::Win32(raw_handle)
+                    win32_raw_window_handle_06(handle)
                 }
                 _ => todo!(),
             },
@@ -321,5 +326,26 @@ impl Renderer {
             .submit(user_cmd_bufs.into_iter().chain([encoded]));
 
         output_frame.present();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::ptr::NonNull;
+
+    use raw_window_handle::Win32WindowHandle;
+    use raw_window_handle_06::RawWindowHandle as RawWindowHandle06;
+
+    use super::win32_raw_window_handle_06;
+
+    #[test]
+    fn parented_win32_handle_allows_a_null_hinstance() {
+        let mut handle = Win32WindowHandle::empty();
+        handle.hwnd = NonNull::<u8>::dangling().as_ptr().cast();
+
+        let RawWindowHandle06::Win32(converted) = win32_raw_window_handle_06(handle) else {
+            panic!("Win32 handle conversion changed variants");
+        };
+        assert!(converted.hinstance.is_none());
     }
 }
