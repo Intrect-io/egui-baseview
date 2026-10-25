@@ -8,7 +8,7 @@ use baseview::{PhySize, Window};
 use egui::FullOutput;
 use egui_wgpu::{
     wgpu::{
-        Color, CommandEncoderDescriptor, Extent3d, Instance, InstanceDescriptor,
+        Backends, Color, CommandEncoderDescriptor, Extent3d, Instance, InstanceDescriptor,
         RenderPassColorAttachment, RenderPassDescriptor, Surface, SurfaceConfiguration,
         SurfaceTargetUnsafe, TextureDescriptor, TextureDimension, TextureUsages, TextureView,
         TextureViewDescriptor,
@@ -49,6 +49,24 @@ impl Default for GraphicsConfig {
 
 const MSAA_SAMPLES: u32 = 4;
 
+/// Backends the editor may render through. `WGPU_BACKEND` still overrides this,
+/// which is useful when diagnosing a user's machine.
+///
+/// On Windows, Vulkan is left out. wgpu enumerates Vulkan before D3D12 and keeps
+/// that order between adapters of the same type, so a normal GPU would otherwise
+/// render through Vulkan -- loading every Vulkan implicit layer (overlays,
+/// capture and vendor layers) into the plug-in host's process. D3D12 drives
+/// every GPU Vulkan would here, and its WARP software adapter covers machines
+/// without a GPU driver; GL stays as a last hardware option for GPUs with no
+/// D3D12 driver (pre-Haswell Intel, for one).
+fn default_backends(windows: bool) -> Backends {
+    if windows {
+        Backends::DX12 | Backends::GL
+    } else {
+        Backends::all()
+    }
+}
+
 pub struct Renderer {
     render_state: Arc<RenderState>,
     surface: Surface<'static>,
@@ -74,7 +92,10 @@ fn win32_raw_window_handle_06(
 
 impl Renderer {
     pub fn new(window: &Window, config: GraphicsConfig) -> Result<Self, WgpuError> {
-        let instance = Instance::new(&InstanceDescriptor::default());
+        let instance = Instance::new(&InstanceDescriptor {
+            backends: Backends::from_env().unwrap_or_else(|| default_backends(cfg!(windows))),
+            ..Default::default()
+        });
 
         let raw_display_handle = window.raw_display_handle();
         let raw_window_handle = window.raw_window_handle();
@@ -351,6 +372,15 @@ mod tests {
     use raw_window_handle_06::RawWindowHandle as RawWindowHandle06;
 
     use super::win32_raw_window_handle_06;
+
+    #[test]
+    fn windows_backends_leave_out_vulkan_but_keep_d3d12_and_gl() {
+        let windows = super::default_backends(true);
+        assert!(!windows.contains(super::Backends::VULKAN));
+        assert!(windows.contains(super::Backends::DX12));
+        assert!(windows.contains(super::Backends::GL));
+        assert_eq!(super::default_backends(false), super::Backends::all());
+    }
 
     #[test]
     fn parented_win32_handle_allows_a_null_hinstance() {
