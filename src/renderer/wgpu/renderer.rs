@@ -256,6 +256,20 @@ impl Renderer {
             )
         };
 
+        // Configuring a surface or creating a texture with a zero dimension is a
+        // wgpu validation error, and wgpu's default handler panics on it -- inside
+        // baseview's frame/event callback, where a plug-in host aborts. Hosts can
+        // collapse an embedded view to 0x0, so draw nothing until it has an area.
+        // Texture and buffer writes above are already queued on `queue` and land
+        // with the next submit; frees are applied now so ids are not leaked.
+        if canvas_width == 0 || canvas_height == 0 {
+            let mut renderer = self.render_state.renderer.write();
+            for id in &full_output.textures_delta.free {
+                renderer.free_texture(id);
+            }
+            return;
+        }
+
         if self.width != canvas_width
             || self.height != canvas_height
             || self.msaa_texture_view.is_none()
